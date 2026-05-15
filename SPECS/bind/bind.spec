@@ -73,7 +73,7 @@ BuildRequires:  pkgconfig(libuv)
 BuildRequires:  pkgconfig(libxml-2.0)
 BuildRequires:  pkgconfig(lmdb)
 BuildRequires:  python3dist(dnspython)
-BuildRequires:  pytest
+BuildRequires:  python3dist(pytest)
 
 %description
 BIND (Berkeley Internet Name Domain) is an implementation of the DNS
