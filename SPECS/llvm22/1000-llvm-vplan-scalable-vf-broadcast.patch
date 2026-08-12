@@ -1,0 +1,112 @@
+From 028153a165d6c161f0a7eb045840f5e2b70f6088 Mon Sep 17 00:00:00 2001
+From: Ramkumar Ramachandra <artagnon@tenstorrent.com>
+Date: Tue, 26 May 2026 08:19:25 -0400
+Subject: [PATCH] [VPlan] Make TransformState::get BCast-logic robust (#197589)
+
+The logic for inserting Broadcasts in a more optimal location in
+VPTransformState::get is quite fragile, especially around scalable VFs.
+Fix it, resulting in minor improvements.
+---
+ llvm/lib/Transforms/Vectorize/VPlan.cpp       | 40 +++++--------------
+ .../LoopVectorize/pointer-induction.ll        |  4 +-
+ .../LoopVectorize/scev-predicate-reasoning.ll |  4 +-
+ 3 files changed, 13 insertions(+), 35 deletions(-)
+
+diff --git a/llvm/lib/Transforms/Vectorize/VPlan.cpp b/llvm/lib/Transforms/Vectorize/VPlan.cpp
+index 4f51331d080af..8047c1d83ddf3 100644
+--- a/llvm/lib/Transforms/Vectorize/VPlan.cpp
++++ b/llvm/lib/Transforms/Vectorize/VPlan.cpp
+@@ -333,40 +333,18 @@ Value *VPTransformState::get(const VPValue *Def, bool NeedsScalar) {
+     return Shuf;
+   };
+ 
+-  if (!hasScalarValue(Def, {0})) {
+-    Value *IRV = Def->getLiveInIRValue();
+-    Value *B = GetBroadcastInstrs(IRV);
+-    set(Def, B);
+-    return B;
+-  }
+-
+   Value *ScalarValue = get(Def, VPLane(0));
+-  // If we aren't vectorizing, we can just copy the scalar map values over
+-  // to the vector map.
+-  if (VF.isScalar()) {
+-    set(Def, ScalarValue);
+-    return ScalarValue;
+-  }
+-
+-  bool IsSingleScalar = vputils::isSingleScalar(Def);
+-  VPLane LastLane(IsSingleScalar ? 0 : VF.getFixedValue() - 1);
+-
+-  // We need to construct the vector value for a single-scalar value by
+-  // broadcasting the scalar to all lanes.
+-  // TODO: Replace by introducing Broadcast VPInstructions.
+-  assert(IsSingleScalar && "must be a single-scalar at this point");
+-  // Set the insert point after the last scalarized instruction or after the
+-  // last PHI, if LastInst is a PHI. This ensures the insertelement sequence
+-  // will directly follow the scalar definitions.
+-  auto OldIP = Builder.saveIP();
+-  auto *LastInst = cast<Instruction>(get(Def, LastLane));
+-  auto NewIP = isa<PHINode>(LastInst)
+-                   ? LastInst->getParent()->getFirstNonPHIIt()
+-                   : std::next(BasicBlock::iterator(LastInst));
+-  Builder.SetInsertPoint(&*NewIP);
++  VPLane LastLane = VPLane::getLastLaneForVF(VF);
++  IRBuilderBase::InsertPointGuard Guard(Builder);
++  if (auto *LastInst = dyn_cast<Instruction>(get(Def, LastLane)))
++    // Set the insert point after the last scalarized instruction or after the
++    // last PHI, if LastInst is a PHI. This ensures the insertelement sequence
++    // will directly follow the scalar definitions.
++    Builder.SetInsertPoint(isa<PHINode>(LastInst)
++                               ? LastInst->getParent()->getFirstNonPHIIt()
++                               : std::next(BasicBlock::iterator(LastInst)));
+   Value *VectorValue = GetBroadcastInstrs(ScalarValue);
+   set(Def, VectorValue);
+-  Builder.restoreIP(OldIP);
+   return VectorValue;
+ }
+ 
+diff --git a/llvm/test/Transforms/LoopVectorize/pointer-induction.ll b/llvm/test/Transforms/LoopVectorize/pointer-induction.ll
+index 41b2f6f9e62d8..86d1ef2e46168 100644
+--- a/llvm/test/Transforms/LoopVectorize/pointer-induction.ll
++++ b/llvm/test/Transforms/LoopVectorize/pointer-induction.ll
+@@ -219,6 +219,8 @@ define void @non_constant_vector_expansion(i32 %0, ptr %call) {
+ ; STRIDED-NEXT:  entry:
+ ; STRIDED-NEXT:    [[MUL:%.*]] = shl i32 [[TMP0:%.*]], 1
+ ; STRIDED-NEXT:    [[TMP1:%.*]] = sext i32 [[MUL]] to i64
++; STRIDED-NEXT:    [[BROADCAST_SPLATINSERT:%.*]] = insertelement <4 x i64> poison, i64 [[TMP1]], i64 0
++; STRIDED-NEXT:    [[DOTSPLAT:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT]], <4 x i64> poison, <4 x i32> zeroinitializer
+ ; STRIDED-NEXT:    br label [[VECTOR_PH:%.*]]
+ ; STRIDED:       vector.ph:
+ ; STRIDED-NEXT:    [[TMP2:%.*]] = mul i64 100, [[TMP1]]
+@@ -227,8 +229,6 @@ define void @non_constant_vector_expansion(i32 %0, ptr %call) {
+ ; STRIDED:       vector.body:
+ ; STRIDED-NEXT:    [[INDEX:%.*]] = phi i64 [ 0, [[VECTOR_PH]] ], [ [[INDEX_NEXT:%.*]], [[VECTOR_BODY]] ]
+ ; STRIDED-NEXT:    [[POINTER_PHI:%.*]] = phi ptr [ null, [[VECTOR_PH]] ], [ [[PTR_IND:%.*]], [[VECTOR_BODY]] ]
+-; STRIDED-NEXT:    [[DOTSPLATINSERT:%.*]] = insertelement <4 x i64> poison, i64 [[TMP1]], i64 0
+-; STRIDED-NEXT:    [[DOTSPLAT:%.*]] = shufflevector <4 x i64> [[DOTSPLATINSERT]], <4 x i64> poison, <4 x i32> zeroinitializer
+ ; STRIDED-NEXT:    [[TMP4:%.*]] = mul <4 x i64> <i64 0, i64 1, i64 2, i64 3>, [[DOTSPLAT]]
+ ; STRIDED-NEXT:    [[VECTOR_GEP:%.*]] = getelementptr i8, ptr [[POINTER_PHI]], <4 x i64> [[TMP4]]
+ ; STRIDED-NEXT:    [[OFFSET_IDX:%.*]] = trunc i64 [[INDEX]] to i32
+diff --git a/llvm/test/Transforms/LoopVectorize/scev-predicate-reasoning.ll b/llvm/test/Transforms/LoopVectorize/scev-predicate-reasoning.ll
+index b5ca609e48398..7ba15cf75a510 100644
+--- a/llvm/test/Transforms/LoopVectorize/scev-predicate-reasoning.ll
++++ b/llvm/test/Transforms/LoopVectorize/scev-predicate-reasoning.ll
+@@ -73,6 +73,8 @@ define void @integer_induction_wraps_scev_predicate_known(i32 %x, ptr %call, ptr
+ ; CHECK-NEXT:  [[ENTRY:.*:]]
+ ; CHECK-NEXT:    [[MUL:%.*]] = shl i32 [[X]], 1
+ ; CHECK-NEXT:    [[TMP0:%.*]] = sext i32 [[MUL]] to i64
++; CHECK-NEXT:    [[BROADCAST_SPLATINSERT:%.*]] = insertelement <4 x i64> poison, i64 [[TMP0]], i64 0
++; CHECK-NEXT:    [[BROADCAST_SPLAT:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT]], <4 x i64> poison, <4 x i32> zeroinitializer
+ ; CHECK-NEXT:    br label %[[VECTOR_PH:.*]]
+ ; CHECK:       [[VECTOR_PH]]:
+ ; CHECK-NEXT:    [[TMP1:%.*]] = mul i64 992, [[TMP0]]
+@@ -81,8 +83,6 @@ define void @integer_induction_wraps_scev_predicate_known(i32 %x, ptr %call, ptr
+ ; CHECK:       [[VECTOR_BODY]]:
+ ; CHECK-NEXT:    [[INDEX:%.*]] = phi i64 [ 0, %[[VECTOR_PH]] ], [ [[INDEX_NEXT:%.*]], %[[VECTOR_BODY]] ]
+ ; CHECK-NEXT:    [[POINTER_PHI:%.*]] = phi ptr [ [[START]], %[[VECTOR_PH]] ], [ [[PTR_IND:%.*]], %[[VECTOR_BODY]] ]
+-; CHECK-NEXT:    [[BROADCAST_SPLATINSERT:%.*]] = insertelement <4 x i64> poison, i64 [[TMP0]], i64 0
+-; CHECK-NEXT:    [[BROADCAST_SPLAT:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT]], <4 x i64> poison, <4 x i32> zeroinitializer
+ ; CHECK-NEXT:    [[TMP3:%.*]] = mul <4 x i64> <i64 0, i64 1, i64 2, i64 3>, [[BROADCAST_SPLAT]]
+ ; CHECK-NEXT:    [[VECTOR_GEP:%.*]] = getelementptr i8, ptr [[POINTER_PHI]], <4 x i64> [[TMP3]]
+ ; CHECK-NEXT:    [[DOTCAST:%.*]] = trunc i64 [[INDEX]] to i32

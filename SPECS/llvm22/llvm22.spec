@@ -82,6 +82,8 @@ VCS:            git:https://github.com/llvm/llvm-project.git
 Source0:        https://github.com/llvm/llvm-project/releases/download/llvmorg-%{maj_ver}.%{min_ver}.%{patch_ver}%{?rc_ver:-%{rc_ver}}/%{src_tarball_dir}.tar.xz
 
 # please keep the patches in different groups for easier maintenance
+# https://github.com/llvm/llvm-project/pull/197589
+Patch1000:         1000-llvm-vplan-scalable-vf-broadcast.patch
 %if "%{openruyi_riscv_arch}" == "-march=rva23u64"
 Patch2000:         2000-Add-riscv64-openruyi-linux-triple-and-set-it-to-rva2.patch
 %endif
