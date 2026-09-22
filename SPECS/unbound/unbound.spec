@@ -31,7 +31,7 @@ Source7:        tmpfiles-unbound.conf
 Source8:        example.com.key
 Source9:        example.com.conf
 Source10:       block-example.com.conf
-#!RemoteAsset:  sha256:d4c77eafb8a3bc1d68fb7c171afbd0d2a76870dae81ad18d0c584fa46ecd1eb1
+#!RemoteAsset:  sha256:18ce7215812d1a2cad8d9d4d3d7c26f7235a9b5ec6f0c1e214e15230fd4f9e24
 Source11:       https://data.iana.org/root-anchors/icannbundle.pem
 Source12:       root.anchor
 Source13:       unbound.sysconfig
