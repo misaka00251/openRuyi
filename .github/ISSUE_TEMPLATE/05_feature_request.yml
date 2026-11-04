@@ -1,0 +1,131 @@
+name: "Feature branch request"
+description: "Request and track a new feature development branch."
+title: "Feature branch request: TOPIC"
+labels: ["Type: Feature"]
+
+body:
+  - type: "markdown"
+    attributes:
+      value: |
+        Welcome to openRuyi.
+
+        Please replace **`Feature branch request: TOPIC`** above with a short title summarising the development topic.
+
+        Use this issue to request and track a `feat/<topic>` branch throughout its lifecycle.
+
+        A feature branch is intended for unfinished development. It is not a release branch and does not participate in the release process. Establishing a feature branch and integrating its changes into the target branch require separate PRs.
+
+        Please read the [Feature Branch Workflow documentation](https://openruyi.cn/community/policy/release-policies) before submitting this request.
+
+        ---
+
+  - type: "input"
+    id: "branch-name"
+    attributes:
+      label: "Feature branch name"
+      description: |
+        Please provide the proposed branch name, following `feat/<topic>`.
+
+        `<topic>` must follow an action + object naming structure.
+      placeholder: "feat/<topic>"
+    validations:
+      required: true
+
+  - type: "input"
+    id: "feature-owner"
+    attributes:
+      label: "Feature branch owner"
+      description: |
+        Please provide the GitHub username of the single person responsible for this feature branch throughout its lifecycle.
+      placeholder: "@username"
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: "development-goal"
+    attributes:
+      label: "Development goal"
+      description: "Describe the intended development goal and expected outcome."
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: "change-scope"
+    attributes:
+      label: "Change scope"
+      description: |
+        Describe the scope of changes covered by this feature, including affected components and packages.
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: "required-tasks"
+    attributes:
+      label: "Required tasks"
+      description: |
+        List all mandatory tasks that must be completed before this feature can be accepted.
+      placeholder: |
+        - [ ] Task 1
+        - [ ] Task 2
+        - [ ] Task 3
+    validations:
+      required: true
+
+  - type: "input"
+    id: "source-commit"
+    attributes:
+      label: "Source creek commit"
+      description: |
+        Provide the exact commit SHA or GitHub commit URL from the `creek` branch.
+    validations:
+      required: true
+
+  - type: "input"
+    id: "target-branch"
+    attributes:
+      label: "Target merge branch"
+      description: |
+        Specify the branch into which the completed feature changes are intended to be merged.
+      placeholder: "creek"
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: "completion-criteria"
+    attributes:
+      label: "Completion criteria"
+      description: |
+        Define the conditions that must be satisfied before this feature can be considered complete and accepted.
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: "verification-method"
+    attributes:
+      label: "Verification method"
+      description: |
+        Describe how the completion criteria will be verified, including relevant builds, tests, hardware platforms and expected results.
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: "additional-context"
+    attributes:
+      label: "Additional context"
+      description: "Add any other relevant information or references."
+    validations:
+      required: false
+
+  - type: "checkboxes"
+    id: "sanity-check"
+    attributes:
+      label: "I assert that this feature branch request is relevant for openRuyi"
+      options:
+        - label: "I assert that this is not a duplicate of an existing feature branch request."
+          required: true
+        - label: "I understand that branch establishment and feature integration require separate PRs."
+          required: true
+        - label: "I have read the [Feature Branch Workflow documentation](https://openruyi.cn/community/policy/release-policies)."
+          required: true
+        - label: "I assert that I have read the [openRuyi Code of Conduct](https://openruyi.cn/governance/legal/code-of-conduct) and agree to abide by it."
+          required: true
